@@ -4,7 +4,7 @@ Dim OldSeatingChart As Range
 Dim NewSeatingChart As Range
 Dim OldNeighBoursMap() As Variant
 
-Sub Test101()
+Public Sub Main()
     Dim t1 As Single: t1 = Timer
    
     Set OldSeatingChart = ThisWorkbook.Worksheets("座席表（現）").Range("B5:G10")

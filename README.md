@@ -1,1 +1,1 @@
-# SeatingArrangement
+EXcel VBAによる座席替えアルゴリズム

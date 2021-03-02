@@ -1,0 +1,164 @@
+Option Explicit
+
+Dim OldSeatingChart As Range
+Dim NewSeatingChart As Range
+Dim OldNeighBoursMap() As Variant
+
+Sub Test101()
+    Dim t1 As Single: t1 = Timer
+   
+    Set OldSeatingChart = ThisWorkbook.Worksheets("座席表（現）").Range("B5:G10")
+    Set NewSeatingChart = ThisWorkbook.Worksheets("座席表（新）").Range("B5:G10")
+    NewSeatingChart.ClearContents
+    NewSeatingChart.Interior.Color = xlNone
+    
+    '座席表（新）の現席番対応表（現席番がどこに移動したかを知る表）
+    Dim NewSeatMap() As Variant
+    ReDim NewSeatMap(1 To NewSeatingChart.Count)
+    
+    '座席表（現）の前後左右の席番リストを生成する
+    ReDim OldNeighBoursMap(1 To NewSeatingChart.Count)
+    Call MakeOldNeighBoursMap
+    
+    '席替えする
+    Call ChangeSeatArrangement(1, NewSeatMap)
+    
+    '席替えの結果を座席表（新）に書き出す
+    Call PrintNewSeatingChart(NewSeatMap)
+    
+    '席替え条件を満たしているか検査をする
+    Call CheckNewSeatArrangement(NewSeatMap)
+
+    t1 = Timer - t1
+    Debug.Print "Finished. Time="; t1
+End Sub
+
+'席替えをする
+'席替え条件：全員が違う行列に移動、前後左右は前回と違う人
+Private Function ChangeSeatArrangement(ByVal SeatNumber As Long, ByRef NewSeatMap() As Variant, _
+                                       Optional IsReEntry As Boolean = False) As Boolean
+    Static RemainingSeats As Long
+    If IsReEntry = False Then RemainingSeats = UBound(NewSeatMap)
+
+    '席替えが完了したら終了
+    If RemainingSeats = 0 Then ChangeSeatArrangement = True: Exit Function
+    Dim newSeatNumber As Long
+    For newSeatNumber = 1 To UBound(NewSeatMap)
+        '異なる行・列で空席か？
+        If NewSeatMap(newSeatNumber) = "" And IsSameLines(newSeatNumber, SeatNumber) = False Then
+            If IsOldNeighbourAround(SeatNumber, newSeatNumber, NewSeatMap) = False Then
+                '座席を仮指定する
+                NewSeatMap(newSeatNumber) = SeatNumber
+                RemainingSeats = RemainingSeats - 1
+                If ChangeSeatArrangement(SeatNumber + 1, NewSeatMap, True) Then
+                    ChangeSeatArrangement = True
+                    Exit Function
+                Else
+                    '座席の仮指定を取り消す
+                    NewSeatMap(newSeatNumber) = ""
+                    RemainingSeats = RemainingSeats + 1
+                End If
+            End If
+        End If
+    Next
+    ChangeSeatArrangement = False
+End Function
+
+'前後左右に現在と同じ人が既に配置されているかチェックする
+Private Function IsOldNeighbourAround(ByVal OldSeatNumber As Variant, _
+                                      ByVal newSeatNumber As Variant, _
+                                      ByRef NewSeatMap() As Variant) As Boolean
+    IsOldNeighbourAround = True
+    
+    Dim NewNeighbours() As Variant, k As Long
+    ReDim NewNeighbours(1 To 4)
+    If newSeatNumber > 6 Then k = k + 1: NewNeighbours(k) = NewSeatMap(newSeatNumber - 6)
+    If newSeatNumber < 31 Then k = k + 1: NewNeighbours(k) = NewSeatMap(newSeatNumber + 6)
+    If (newSeatNumber - 1) Mod 6 > 0 Then k = k + 1: NewNeighbours(k) = NewSeatMap(newSeatNumber - 1)
+    If (newSeatNumber - 1) Mod 6 < 5 Then k = k + 1: NewNeighbours(k) = NewSeatMap(newSeatNumber + 1)
+    ReDim Preserve NewNeighbours(1 To k)
+
+    If k = 0 Then IsOldNeighbourAround = False: Exit Function
+
+    Dim newNeighbour As Variant, oldNeighbour As Variant
+    For Each newNeighbour In NewNeighbours
+        For Each oldNeighbour In OldNeighBoursMap(OldSeatNumber)
+            If newNeighbour = oldNeighbour Then Exit Function
+        Next
+    Next
+    IsOldNeighbourAround = False
+
+End Function
+
+'座席表（新）に席替えの結果を表示する
+Private Sub PrintNewSeatingChart(ByRef NewSeatMap() As Variant)
+    Dim newSeatNumber As Variant, OldSeatNumber As Variant
+    For newSeatNumber = 1 To UBound(NewSeatMap)
+        Dim newRow As Long, newColumn As Long
+        Dim oldRow As Long, oldColumn As Long
+        
+        newRow = Int((newSeatNumber - 1) / 6) + 1
+        newColumn = ((newSeatNumber - 1) Mod 6) + 1
+        OldSeatNumber = NewSeatMap(newSeatNumber)
+        If OldSeatNumber = "" Then
+            NewSeatingChart.Item(newRow, newColumn).Value = ""
+        Else
+            oldRow = Int((OldSeatNumber - 1) / 6) + 1
+            oldColumn = ((OldSeatNumber - 1) Mod 6) + 1
+            NewSeatingChart.Item(newRow, newColumn).Value = _
+                    OldSeatingChart.Item(oldRow, oldColumn).Value
+        End If
+    Next
+End Sub
+
+'席替え条件を満たしているか検査をする。前後左右が前回と同じ場合は黄色でハッチング
+Private Sub CheckNewSeatArrangement(ByRef NewSeatMap() As Variant)
+    Dim newSeatNumber As Long, OldSeatNumber As Long
+    For newSeatNumber = 1 To UBound(NewSeatMap)
+        OldSeatNumber = NewSeatMap(newSeatNumber)
+        If IsOldNeighbourAround(OldSeatNumber, newSeatNumber, NewSeatMap) Then
+            Dim newRow As Long, newColumn As Long
+            newRow = Int((newSeatNumber - 1) / 6) + 1
+            newColumn = ((newSeatNumber - 1) Mod 6) + 1
+            NewSeatingChart.Item(newRow, newColumn).Interior.Color = rgbYellow
+        End If
+    Next
+End Sub
+
+'二つの席番が同じ行または列になっているか検査する
+Private Function IsSameLines(SeatNumber1 As Long, SeatNumber2 As Long) As Boolean
+    IsSameLines = True
+    If Int((SeatNumber1 - 1) / 6) = Int((SeatNumber2 - 1) / 6) Then Exit Function
+    If ((SeatNumber1 - 1) Mod 6) = ((SeatNumber2 - 1) Mod 6) Then Exit Function
+    IsSameLines = False
+End Function
+
+'元の座席表の前後左右の関係をジャグ配列にする
+Private Sub MakeOldNeighBoursMap()
+    Dim OldNeighbours() As Variant
+    Dim i As Long
+    For i = 1 To UBound(OldNeighBoursMap)
+        ReDim OldNeighbours(1 To 4)
+        Dim k As Long: k = 0
+        If i > 6 Then k = k + 1: OldNeighbours(k) = i - 6
+        If i < 31 Then k = k + 1: OldNeighbours(k) = i + 6
+        If (i - 1) Mod 6 > 0 Then k = k + 1: OldNeighbours(k) = i - 1
+        If (i - 1) Mod 6 < 5 Then k = k + 1: OldNeighbours(k) = i + 1
+        ReDim Preserve OldNeighbours(1 To k)
+        OldNeighBoursMap(i) = OldNeighbours
+    Next
+End Sub
+
+'全ての座席が指定されているか検査する
+Private Function IsAllSeatAllocated(ByRef NewSeatMap() As Variant) As Boolean
+    IsAllSeatAllocated = False
+    Dim SeatNumber As Variant
+    For Each SeatNumber In NewSeatMap
+        If SeatNumber = "" Then Exit Function
+    Next
+    IsAllSeatAllocated = True
+End Function
+
+'-------------------------------------------------------------------------------
+' End of Module
+'-------------------------------------------------------------------------------
